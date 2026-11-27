@@ -251,7 +251,7 @@ func iteratorListBody(c *Client) ([]byte, error) {
 
 // TestGeneratedIterators calls every generated ...All method against a fake
 // API. Those methods each inline the pager, so statement coverage only
-// counts them when they run. Multi-page behaviour and error paths are
+// counts them when they run. Multi-page behavior and error paths are
 // covered in TestIterators and TestIteratorError.
 func TestGeneratedIterators(t *testing.T) {
 	c, err := NewClient("tok", WithRetries(0, 0, 0))
