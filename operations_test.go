@@ -3,6 +3,7 @@ package noderings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -189,5 +190,148 @@ func setNonZero(f reflect.Value) {
 			setNonZero(p.Elem())
 		}
 		f.Set(p)
+	}
+}
+
+// iteratorListBody builds a JSON object with a one-element array for every
+// slice field of every List* response, so each ...All iterator yields an item.
+func iteratorListBody(c *Client) ([]byte, error) {
+	obj := map[string]any{}
+	cv := reflect.ValueOf(c).Elem()
+	if f := cv.FieldByName("services"); f.IsValid() && f.Kind() == reflect.Struct {
+		cv = f
+	}
+	for i := 0; i < cv.NumField(); i++ {
+		svc := cv.Field(i)
+		if !svc.IsValid() || svc.Kind() != reflect.Pointer || svc.IsNil() {
+			continue
+		}
+		st := svc.Type()
+		for j := 0; j < st.NumMethod(); j++ {
+			name := st.Method(j).Name
+			if !strings.HasPrefix(name, "List") || strings.HasSuffix(name, "All") {
+				continue
+			}
+			m := st.Method(j).Type
+			if m.NumOut() < 1 || m.Out(0).Kind() != reflect.Pointer {
+				continue
+			}
+			rt := m.Out(0).Elem()
+			if rt.Kind() != reflect.Struct {
+				continue
+			}
+			for k := 0; k < rt.NumField(); k++ {
+				f := rt.Field(k)
+				if f.Type.Kind() != reflect.Slice {
+					continue
+				}
+				tag := strings.Split(f.Tag.Get("json"), ",")[0]
+				if tag == "" || tag == "-" {
+					continue
+				}
+				elem := f.Type.Elem()
+				var zero any
+				switch elem.Kind() {
+				case reflect.String:
+					zero = ""
+				case reflect.Struct, reflect.Map, reflect.Pointer:
+					zero = map[string]any{}
+				default:
+					zero = reflect.Zero(elem).Interface()
+				}
+				obj[tag] = []any{zero}
+			}
+		}
+	}
+	if len(obj) == 0 {
+		return nil, errors.New("no list response fields found")
+	}
+	return json.Marshal(obj)
+}
+
+// TestGeneratedIterators calls every generated ...All method against a fake
+// API. Those methods each inline the pager, so statement coverage only
+// counts them when they run. Multi-page behaviour and error paths are
+// covered in TestIterators and TestIteratorError.
+func TestGeneratedIterators(t *testing.T) {
+	c, err := NewClient("tok", WithRetries(0, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := iteratorListBody(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A full first page makes the iterator request the next page; an
+		// empty later page stops it. That covers the inlined pager loop.
+		if r.URL.Query().Get("page") != "" && r.URL.Query().Get("page") != "0" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+	c, err = NewClient("tok", WithBaseURL(srv.URL), WithRetries(0, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cv := reflect.ValueOf(c).Elem()
+	// Service pointers live on the embedded services struct.
+	if f := cv.FieldByName("services"); f.IsValid() && f.Kind() == reflect.Struct {
+		cv = f
+	}
+	ct := cv.Type()
+	n := 0
+	for i := 0; i < ct.NumField(); i++ {
+		svc := cv.Field(i)
+		if !svc.IsValid() || svc.Kind() != reflect.Pointer || svc.IsNil() {
+			continue
+		}
+		st := svc.Type()
+		for j := 0; j < st.NumMethod(); j++ {
+			name := st.Method(j).Name
+			if !strings.HasSuffix(name, "All") {
+				continue
+			}
+			n++
+			t.Run(ct.Field(i).Name+"."+name, func(t *testing.T) {
+				m := svc.MethodByName(name)
+				mt := m.Type()
+				args := []reflect.Value{reflect.ValueOf(context.Background())}
+				for k := 1; k < mt.NumIn(); k++ {
+					in := mt.In(k)
+					switch {
+					case in.Kind() == reflect.String:
+						args = append(args, reflect.ValueOf("id"))
+					case in.Kind() == reflect.Pointer:
+						pv := reflect.New(in.Elem())
+						if f := pv.Elem().FieldByName("PageSize"); f.IsValid() && f.CanSet() {
+							f.SetInt(1)
+						}
+						args = append(args, pv)
+					default:
+						t.Fatalf("unexpected argument type %s", in)
+					}
+				}
+				outs := m.Call(args)
+				if len(outs) != 1 {
+					t.Fatalf("got %d return values, want the iterator", len(outs))
+				}
+				seq := outs[0]
+				yieldTyp := seq.Type().In(0)
+				yield := reflect.MakeFunc(yieldTyp, func(in []reflect.Value) []reflect.Value {
+					if err, _ := in[1].Interface().(error); err != nil {
+						t.Errorf("iterator error: %v", err)
+					}
+					return []reflect.Value{reflect.ValueOf(true)}
+				})
+				seq.Call([]reflect.Value{yield})
+			})
+		}
+	}
+	if n < 60 {
+		t.Fatalf("only found %d ...All methods", n)
 	}
 }
