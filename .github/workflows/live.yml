@@ -1,0 +1,44 @@
+name: live
+
+# Read and write tests against the production NodeRings API. Needs the
+# NODERINGS_TOKEN secret; creates only throwaway SSH keys, DNS zones, firewall
+# rulesets and cloud-init data, and deletes them again. The billed virtual
+# machine test runs only when started by hand with "billed" ticked.
+on:
+  schedule:
+    - cron: "20 3 * * *"
+  workflow_dispatch:
+    inputs:
+      billed:
+        description: Also create and delete a virtual machine (billed per hour)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live API
+    runs-on: ubuntu-latest
+    env:
+      NODERINGS_TOKEN: ${{ secrets.NODERINGS_TOKEN }}
+      NODERINGS_TEST_ZONE_ID: ${{ vars.NODERINGS_TEST_ZONE_ID }}
+      NODERINGS_TEST_PLAN_ID: ${{ vars.NODERINGS_TEST_PLAN_ID }}
+      NODERINGS_TEST_REGION_ID: ${{ vars.NODERINGS_TEST_REGION_ID }}
+      NODERINGS_TEST_BILLED: ${{ inputs.billed && '1' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Run
+        run: |
+          if [ -z "$NODERINGS_TOKEN" ]; then echo "NODERINGS_TOKEN is not set; skipping."; exit 0; fi
+          go test -tags live -count=1 -timeout 30m -run Live -v ./...

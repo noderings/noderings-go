@@ -1,0 +1,40 @@
+name: spec-update
+
+# Fetches the published OpenAPI description once a week and opens a pull
+# request when it changed, with the SDK regenerated.
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Fetch and regenerate
+        run: |
+          curl -fsS https://api.noderings.com/v1/openapi.json | python3 -c 'import json,sys; json.dump(json.load(sys.stdin), open("api/openapi.json","w"), indent=1, sort_keys=True)'
+          go generate ./...
+          go test ./...
+      - uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
+        with:
+          branch: spec-update
+          commit-message: "feat: update to the latest NodeRings API description"
+          title: "feat: update to the latest NodeRings API description"
+          body: |
+            The published OpenAPI description at https://api.noderings.com/v1/openapi.json changed.
+            This regenerates the SDK. Check the diff of zz_generated_*.go for renamed or removed
+            fields before releasing, and note them in CHANGELOG.md.
+          signoff: true

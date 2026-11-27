@@ -1,0 +1,31 @@
+version: "2"
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - usestdlibvars
+  settings:
+    misspell:
+      locale: US
+  exclusions:
+    generated: strict
+    rules:
+      # Generated code mirrors the API's names and comments.
+      - path: zz_generated_
+        linters: [revive, gocritic, misspell]
+      # Fake API handlers share one signature and do not use every argument.
+      - path: _test\.go
+        text: "unused-parameter"
+        linters: [revive]
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/noderings/noderings-go
