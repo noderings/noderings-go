@@ -6,6 +6,8 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-27
+
 ### Added
 
 - Typed client for the whole public NodeRings API: 485 operations in 69 services, generated from
@@ -13,3 +15,6 @@ All notable changes are documented here. The format follows
 - Retries for rate limits and, where safe, for gateway and availability errors; typed errors
   with helpers; automatic idempotency keys on creates; iterators for every paged list; wait
   helpers for virtual machines; `Client.Do` for raw requests.
+
+[Unreleased]: https://github.com/noderings/noderings-go/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/noderings/noderings-go/releases/tag/v0.1.0
