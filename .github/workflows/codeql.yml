@@ -13,8 +13,11 @@ permissions:
 jobs:
   analyze:
     name: CodeQL (Go)
+    # Code scanning and Scorecard publishing need a public repository.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write # upload the results to code scanning
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

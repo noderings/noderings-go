@@ -14,8 +14,11 @@ permissions: read-all
 jobs:
   analysis:
     name: Scorecard analysis
+    # Code scanning and Scorecard publishing need a public repository.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write # upload the results to code scanning
       id-token: write        # publish the results to the Scorecard API
     steps:
